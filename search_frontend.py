@@ -34,7 +34,7 @@ def search():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
-
+    
     # END SOLUTION
     return jsonify(res)
 
