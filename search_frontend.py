@@ -1,10 +1,11 @@
 from flask import Flask, request, jsonify
 import pickle
-
+from Tokenizer import Tokenizer
 
 
 class MyFlaskApp(Flask):
     def run(self, host=None, port=None, debug=None, **options):
+        self.tokenizer = Tokenizer()
         super(MyFlaskApp, self).run(host=host, port=port, debug=debug, **options)
 
 app = MyFlaskApp(__name__)
@@ -34,7 +35,8 @@ def search():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
-    
+    questionWords = ["Where","How","When","What","Why","Which","Whom","Whose","Who"]
+    stemmedQuery=list(set(app.tokenizer.tokenize(query,stem=True)))
     # END SOLUTION
     return jsonify(res)
 

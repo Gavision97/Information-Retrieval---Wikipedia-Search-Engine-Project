@@ -93,5 +93,4 @@ class CosineSim:
         """
 
         return sorted([(doc_id, round(score, 5)) for doc_id, score in sim_dict.items()], key=lambda x: x[1],
-                      reverse=True)[
-               :N]
+                      reverse=True)[:N]
