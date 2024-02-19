@@ -1,16 +1,20 @@
 from flask import Flask, request, jsonify
 import pickle
 from Tokenizer import Tokenizer
-
+from google.cloud import storage
+from inverted_index_gcp import InvertedIndex
 
 class MyFlaskApp(Flask):
     def run(self, host=None, port=None, debug=None, **options):
+        bucket_name = "##########"
+        client = storage.Client()
+        self.my_bucket = client.bucket(bucket_name=bucket_name)
         self.tokenizer = Tokenizer()
+        self.page_rank = {}
         super(MyFlaskApp, self).run(host=host, port=port, debug=debug, **options)
 
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
-
 
 @app.route("/search")
 def search():
@@ -37,6 +41,8 @@ def search():
     # BEGIN SOLUTION
     questionWords = ["Where","How","When","What","Why","Which","Whom","Whose","Who"]
     stemmedQuery=list(set(app.tokenizer.tokenize(query,stem=True)))
+    query=query.lower()
+
     # END SOLUTION
     return jsonify(res)
 
@@ -61,7 +67,8 @@ def search_body():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
-
+    result=[]
+    result_list=app.cosine_body.calcCosineSim(app.tokenizer.tokenize(query, stem=False),app.index_body,N=100)
     # END SOLUTION
     return jsonify(res)
 
@@ -173,7 +180,7 @@ def get_pageview():
     if len(wiki_ids) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
-
+    result=[app.page_views[wikiID] for wikiID in wiki_ids]
     # END SOLUTION
     return jsonify(res)
 
