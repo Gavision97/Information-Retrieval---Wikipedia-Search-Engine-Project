@@ -1,11 +1,57 @@
-from flask import Flask, request, jsonify
+from inverted_index_gcp import *
+import math
 import pickle
+import numpy as np
+import pandas as pd
+from collections import Counter
 
-
+from CosinSimilarity import CosinSimilarity
+from flask import Flask, request, jsonify
+from Tokenizer import Tokenizer
+from google.cloud import storage
 
 class MyFlaskApp(Flask):
     def run(self, host=None, port=None, debug=None, **options):
         super(MyFlaskApp, self).run(host=host, port=port, debug=debug, **options)
+        bucket_name = "inverted_indexes_bucket"
+
+        client = storage.Client()
+
+        self.tokenizer = Tokenizer()
+        self.my_bucket = client.bucket(bucket_name=bucket_name)
+        self.page_rank = {}
+        self.tempDict = {}
+
+        for blob in client.list_blobs(bucket_name):
+            if blob.name == "body_stem_index.pkl":
+                with blob.open('rb') as openfile:
+                    self.body_stem_index = pickle.load(openfile)
+
+            elif blob.name == "title_stem_index.pkl":
+                with blob.open('rb') as openfile:
+                    self.title_stem_index = pickle.load(openfile)
+
+            elif blob.name == "body_dictionary_length.pkl":
+                with blob.open('rb') as openfile:
+                    self.DL_body = pickle.load(openfile)
+
+            elif blob.name == "title_dictionary_length.pkl":
+                with blob.open('rb') as openfile:
+                    self.DL_title = pickle.load(openfile)
+
+            elif blob.name == "doc2vec.pkl":
+                with blob.open('rb') as openfile:
+                    self.doc_title_dict = pickle.load(openfile)
+
+            elif blob.name == "pageRank.pkl":
+                with blob.open('rb') as openfile:
+                    self.tempDict = pickle.load(openfile)
+                    self.page_rank = {str(k): v for k, v in self.tempDict.items()}
+
+
+        self.cosine_stem_body = CosinSimilarity(self.body_stem_index, self.DL_body, "_body_stem")
+
+        #self.cosine_title = CosinSimilarity(self.title_stem_index, self.DL_title, "_title_stem", self.doc_norm)
 
 app = MyFlaskApp(__name__)
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
@@ -34,146 +80,22 @@ def search():
     if len(query) == 0:
       return jsonify(res)
     # BEGIN SOLUTION
-    
-    # END SOLUTION
-    return jsonify(res)
 
-@app.route("/search_body")
-def search_body():
-    ''' Returns up to a 100 search results for the query using TFIDF AND COSINE
-        SIMILARITY OF THE BODY OF ARTICLES ONLY. DO NOT use stemming. DO USE the 
-        staff-provided tokenizer from Assignment 3 (GCP part) to do the 
-        tokenization and remove stopwords. 
+    query_stemmed = list(set(app.tokenizer.tokenize(query, True)))
 
-        To issue a query navigate to a URL like:
-         http://YOUR_SERVER_DOMAIN/search_body?query=hello+world
-        where YOUR_SERVER_DOMAIN is something like XXXX-XX-XX-XX-XX.ngrok.io
-        if you're using ngrok on Colab or your external IP on GCP.
-    Returns:
-    --------
-        list of up to 100 search results, ordered from best to worst where each 
-        element is a tuple (wiki_id, title).
-    '''
-    res = []
-    query = request.args.get('query', '')
-    if len(query) == 0:
-      return jsonify(res)
-    # BEGIN SOLUTION
+    body_res = app.cosine_stem_body.get_topN_score_for_queries(query_stemmed, 100)
+    res = [(int(doc_id), app.doc_title_dict.get(doc_id, "not found")) for doc_id, score in body_res]
 
     # END SOLUTION
-    return jsonify(res)
+    return jsonify(["hiiiii"])
 
-@app.route("/search_title")
-def search_title():
-    ''' Returns ALL (not just top 100) search results that contain A QUERY WORD 
-        IN THE TITLE of articles, ordered in descending order of the NUMBER OF 
-        DISTINCT QUERY WORDS that appear in the title. DO NOT use stemming. DO 
-        USE the staff-provided tokenizer from Assignment 3 (GCP part) to do the 
-        tokenization and remove stopwords. For example, a document 
-        with a title that matches two distinct query words will be ranked before a 
-        document with a title that matches only one distinct query word, 
-        regardless of the number of times the term appeared in the title (or 
-        query). 
 
-        Test this by navigating to the a URL like:
-         http://YOUR_SERVER_DOMAIN/search_title?query=hello+world
-        where YOUR_SERVER_DOMAIN is something like XXXX-XX-XX-XX-XX.ngrok.io
-        if you're using ngrok on Colab or your external IP on GCP.
-    Returns:
-    --------
-        list of ALL (not just top 100) search results, ordered from best to 
-        worst where each element is a tuple (wiki_id, title).
-    '''
-    res = []
-    query = request.args.get('query', '')
-    if len(query) == 0:
-      return jsonify(res)
-    # BEGIN SOLUTION
-
-    # END SOLUTION
-    return jsonify(res)
-
-@app.route("/search_anchor")
-def search_anchor():
-    ''' Returns ALL (not just top 100) search results that contain A QUERY WORD 
-        IN THE ANCHOR TEXT of articles, ordered in descending order of the 
-        NUMBER OF QUERY WORDS that appear in anchor text linking to the page. 
-        DO NOT use stemming. DO USE the staff-provided tokenizer from Assignment 
-        3 (GCP part) to do the tokenization and remove stopwords. For example, 
-        a document with a anchor text that matches two distinct query words will 
-        be ranked before a document with anchor text that matches only one 
-        distinct query word, regardless of the number of times the term appeared 
-        in the anchor text (or query). 
-
-        Test this by navigating to the a URL like:
-         http://YOUR_SERVER_DOMAIN/search_anchor?query=hello+world
-        where YOUR_SERVER_DOMAIN is something like XXXX-XX-XX-XX-XX.ngrok.io
-        if you're using ngrok on Colab or your external IP on GCP.
-    Returns:
-    --------
-        list of ALL (not just top 100) search results, ordered from best to 
-        worst where each element is a tuple (wiki_id, title).
-    '''
-    res = []
-    query = request.args.get('query', '')
-    if len(query) == 0:
-      return jsonify(res)
-    # BEGIN SOLUTION
-    
-    # END SOLUTION
-    return jsonify(res)
-
-@app.route("/get_pagerank", methods=['POST'])
-def get_pagerank():
-    ''' Returns PageRank values for a list of provided wiki article IDs. 
-
-        Test this by issuing a POST request to a URL like:
-          http://YOUR_SERVER_DOMAIN/get_pagerank
-        with a json payload of the list of article ids. In python do:
-          import requests
-          requests.post('http://YOUR_SERVER_DOMAIN/get_pagerank', json=[1,5,8])
-        As before YOUR_SERVER_DOMAIN is something like XXXX-XX-XX-XX-XX.ngrok.io
-        if you're using ngrok on Colab or your external IP on GCP.
-    Returns:
-    --------
-        list of floats:
-          list of PageRank scores that correrspond to the provided article IDs.
-    '''
-    res = []
-    wiki_ids = request.get_json()
-    if len(wiki_ids) == 0:
-      return jsonify(res)
-    # BEGIN SOLUTION
-
-    # END SOLUTION
-    return jsonify(res)
-
-@app.route("/get_pageview", methods=['POST'])
-def get_pageview():
-    ''' Returns the number of page views that each of the provide wiki articles
-        had in August 2021.
-
-        Test this by issuing a POST request to a URL like:
-          http://YOUR_SERVER_DOMAIN/get_pageview
-        with a json payload of the list of article ids. In python do:
-          import requests
-          requests.post('http://YOUR_SERVER_DOMAIN/get_pageview', json=[1,5,8])
-        As before YOUR_SERVER_DOMAIN is something like XXXX-XX-XX-XX-XX.ngrok.io
-        if you're using ngrok on Colab or your external IP on GCP.
-    Returns:
-    --------
-        list of ints:
-          list of page view numbers from August 2021 that correrspond to the 
-          provided list article IDs.
-    '''
-    res = []
-    wiki_ids = request.get_json()
-    if len(wiki_ids) == 0:
-      return jsonify(res)
-    # BEGIN SOLUTION
-
-    # END SOLUTION
-    return jsonify(res)
+    # TODO : after verifying that the app is working, try to add also title.
+    #title_res = getDocListResultWithPageRank(app.title_stem_index, query_stemmed, "_title_stem", 30, app.page_rank)
+    #title_weight = 0.3
+    #body_weight = 0.7
+    #גmerged_res = merge_results(title_res, body_res, title_weight=title_weight, text_weight=body_weight,page_rank=app.page_rank , N=10)
+    #res = [(int(doc_id), app.doc_title_dict.get(doc_id, "not found")) for doc_id, score in merged_res]
 
 
 if __name__ == '__main__':

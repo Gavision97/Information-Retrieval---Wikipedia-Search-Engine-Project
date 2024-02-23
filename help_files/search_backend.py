@@ -248,7 +248,7 @@ def getDocListResultWithPageRank(index, query, index_type, N, pageRank):
             for doc_id, tf in w_pls_dict[term]:
                 newDict[doc_id] = newDict.get(doc_id, 0) + 1
 
-    maxPage = pageRank["3434750"]
+    #maxPage = pageRank["3434750"]
     for k, v in newDict.items():
         newDict[k] = v / len(query)
 
