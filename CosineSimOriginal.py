@@ -5,8 +5,6 @@ from inverted_index_gcp import MultiFileReader
 from collections import Counter
 from collections import defaultdict
 from time import time
-import threading
-
 
 class CosineSim:
 
@@ -34,7 +32,6 @@ class CosineSim:
         Raises:
             KeyError: If the term `w` is not found in the posting lists.
         """
-        global w_pls_dict
         TUPLE_SIZE = 6
         with closing(MultiFileReader(self.index_type, self.bucket_name)) as reader:
             try:
@@ -47,7 +44,8 @@ class CosineSim:
                     posting_list.append((doc_id, tf))
             except KeyError:
                 posting_list = []  # Returning an empty list as default
-        w_pls_dict[w] = posting_list
+
+        return posting_list
 
     def get_posting_gen(self, query):
         """
@@ -56,57 +54,24 @@ class CosineSim:
         ----------
         index: inverted index
         """
-        global w_pls_dict
         w_pls_dict = {}
-        threads = []
         for term in query:
-            thread = threading.Thread(target=self.read_posting_list, args=(self.index, term,))
-            threads.append(thread)
-            thread.start()
-        for thread in threads:
-            thread.join()
+            temp_pls = self.read_posting_list(self.index, term)
+            w_pls_dict[term] = temp_pls
+        return w_pls_dict
 
     def l2_norm(self, query):
-        global normQuery
-        word_counts = Counter(set(query))
+        word_counts = Counter(query)
 
         # Get the counts of each unique word as a list
-        l2_sum = sum(count ** 2 for count in word_counts.values())
+        counts_list = [word_counts[word] ** 2 for word in set(query)]
+        l2_sum = 0
+
+        for word_num in counts_list:
+            l2_sum += word_num
         l2 = math.sqrt(l2_sum)
-        normQuery = l2
-    def get_top_N_docs_by_cosine_similarityFASTCOSINE(self, query, N=100):
-        """
-          Calculates the cosine similarity between the query and documents in the index.
 
-          Args:
-              query (list): A list representing the query.
-              N (int, optional): Number of top documents to return. Defaults to 100.
-
-          Returns:
-              tuple: A tuple containing two elements:
-                  - A list of tuples containing document IDs and their corresponding cosine similarity scores.
-                  - A dictionary containing document IDs as keys and their corresponding cosine similarity scores as values.
-          """
-        global w_pls_dict
-        scores = []
-        ttime=time()
-        w_pls_dict_thread = threading.Thread(target=self.get_posting_gen, args=(query,))
-        w_pls_dict_thread.start()
-        global normQuery
-        l2_norm_thread = threading.Thread(target=self.l2_norm, args=(query,))
-        l2_norm_thread.start()
-        simDict = defaultdict(float)
-        counter = Counter(query)
-        wtq={term:num/len(query) for term,num in counter}
-        w_pls_dict_thread.join()
-        ttime=time()-ttime
-        ttime = time()
-        words = tuple(w_pls_dict.keys())
-        pls = tuple(w_pls_dict.values())
-        scores=defaultdict(float)
-        l2_norm_thread.join()
-
-
+        return l2
 
     def get_top_N_docs_by_cosine_similarity(self, query, N=100):
         """
@@ -121,30 +86,28 @@ class CosineSim:
                   - A list of tuples containing document IDs and their corresponding cosine similarity scores.
                   - A dictionary containing document IDs as keys and their corresponding cosine similarity scores as values.
           """
-        global w_pls_dict
-        ttime=time()
-        w_pls_dict_thread = threading.Thread(target=self.get_posting_gen, args=(query,))
-        w_pls_dict_thread.start()
-        global normQuery
-        l2_norm_thread = threading.Thread(target=self.l2_norm, args=(query,))
-        l2_norm_thread.start()
         simDict = defaultdict(float)
         counter = Counter(query)
-        w_pls_dict_thread.join()
-        ttime=time()-ttime
+        ttime=time()
+        w_pls_dict = self.get_posting_gen(query)
+        ttime = time()-ttime
         ttime = time()
         words = tuple(w_pls_dict.keys())
         pls = tuple(w_pls_dict.values())
-        l2_norm_thread.join()
-        ttime = time() - ttime
+        ttime = time()-ttime
+        ttime = time()
+
+        # Normalize the query by L2 norm technique.
+        normQuery = self.l2_norm(query)
+        ttime = time()-ttime
         ttime = time()
         for token in np.unique(query):
             if token in self.index.df.keys():
                 list_of_doc = pls[words.index(token)]
 
                 for doc_id, freq in list_of_doc:
-                    denominator = normQuery * self.doc_norm[doc_id]
                     numerator = counter[token] * freq
+                    denominator = normQuery * self.doc_norm[doc_id]
                     simDict[doc_id] = simDict.get(doc_id, 0) + numerator / denominator
 
         '''
@@ -157,13 +120,9 @@ class CosineSim:
         '''
         ttime = time() - ttime
         ttime = time()
-
         ls_res = sorted([(doc_id, round(score, 5)) for doc_id, score in simDict.items()], key=lambda x: x[1],
                         reverse=True)[:N]
-        ttime = time() - ttime
-        ttime = time()
-
         sorted_dict = {doc_id: score for doc_id, score in ls_res}
-        ttime = time() - ttime
+
         return (ls_res, sorted_dict)
 

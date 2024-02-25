@@ -94,7 +94,7 @@ def search():
 
     '''
     The next step is to return N number of documents along with their cosine similarity with the query. 
-    For more documentation, refer to 'CosineSim.py'.
+    For more documentation, refer to 'CosineSimOriginal.py'.
     '''
     body_res_ls, body_res_dict = app.cosine_stem_body.get_top_N_docs_by_cosine_similarity(query_stemmed, N=150)
     title_res = app.page_rank_sim.get_top_N_docs_by_title_and_page_rank(query_stemmed, N=150, cosine_sim_on_body_index_dict=body_res_dict)
