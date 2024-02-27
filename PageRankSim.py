@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import time
 from inverted_index_gcp import *
 from collections import Counter
 from collections import defaultdict
@@ -25,11 +26,16 @@ class PageRankSim:
         # Find the maximum and minimum page ranks
         max_rank = max(page_rank_dict.values())
         min_rank = min(page_rank_dict.values())
-
+        zero = False
+        if max_rank == min_rank:
+            zero = True
         # Normalize the page ranks
         normalized_dict = {}
         for doc_id, rank in page_rank_dict.items():
             # Scale the rank to the range of 0 to 1
+            if zero:
+                normalized_dict[doc_id] = 0
+                continue
             normalized_rank = (rank - min_rank) / (max_rank - min_rank)
             normalized_dict[doc_id] = normalized_rank
 
@@ -83,7 +89,7 @@ class PageRankSim:
 
         return w_pls_dict
 
-    def get_top_N_docs_by_title_and_page_rank(self, query, N, cosine_sim_on_body_index_dict):
+    def get_top_N_docs_by_title_and_page_rank(self, query, DL_title, N):
         """
         Retrieves the top N documents based on their title page rank and relevance to the query.
 
@@ -95,16 +101,35 @@ class PageRankSim:
         Returns:
             list: A list of tuples containing the top N document IDs and their corresponding normalized page rank values.
         """
-        page_rank_dict = {}
-        alpha = 0.001
+        alpha = 0.00001
+        page_rank_tf_dict = {}
+        temp_page_rank_dict = {}
+        visited_docs = set()  # Set to keep track of visited dic_ids, in order to add page rank once
         w_pls_dict = self.get_posting_gen(query)
+
         for term in query:
             if term in w_pls_dict.keys():
                 for doc_id, tf in w_pls_dict[term]:
-                    if doc_id in cosine_sim_on_body_index_dict.keys():
-                        page_rank_dict[doc_id] = self.page_rank.get(doc_id, 0) + alpha
+                    page_rank_tf_dict[doc_id] = page_rank_tf_dict.get(doc_id, 0) + 1
 
-        norm_page_rank_title_dic = self.normalize_page_rank_dict(page_rank_dict)
+        for doc_id_ in page_rank_tf_dict.keys():
+            temp_page_rank_dict[doc_id_] = self.page_rank.get(doc_id_, 0) + alpha
+
+        normalized_temp_page_rank_dict = self.normalize_page_rank_dict(temp_page_rank_dict)
+
+        for doc_id__ in page_rank_tf_dict.keys():
+            page_rank_tf_dict[doc_id__] = (page_rank_tf_dict[doc_id__] + normalized_temp_page_rank_dict[
+                doc_id__]) / DL_title.get(doc_id, 1)
+
+        normalized_page_rank_dict = self.normalize_page_rank_dict(page_rank_tf_dict)
+
+        # Normalize the values to be in the range of 0-1
+        norm_page_rank_title_dic = self.normalize_page_rank_dict(page_rank_tf_dict)
 
         # Return top N doc_id with their corresponding page rank value in (doc_in, page_rank) in sorted list
-        return sorted(norm_page_rank_title_dic.items(), key=lambda x: x[1], reverse=True)[:N]
+        ls_res = sorted(normalized_page_rank_dict.items(), key=lambda x: x[1], reverse=True)[:N]
+
+        sorted_dict = {doc_id: score for doc_id, score in ls_res}
+
+        return (ls_res, sorted_dict)
+

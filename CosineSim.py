@@ -18,6 +18,20 @@ class CosineSim:
         self.AVGDL = sum(DL.values()) / self.N
         self.index_type = index_type
         self.bucket_name = "inverted_indexes_bucket"
+
+    def normalize_cosine_similarity(self, cosine_sim_dict):
+        # Find the maximum and minimum
+        max_rank = max(cosine_sim_dict.values())
+        min_rank = min(cosine_sim_dict.values())
+
+        normalized_dict = {}
+        for doc_id, rank in cosine_sim_dict.items():
+            # Scale the rank to the range of 0 to 1
+            normalized_rank = (rank - min_rank) / (max_rank - min_rank)
+            normalized_dict[doc_id] = normalized_rank
+
+        return normalized_dict
+
     def read_posting_list(self, index, w):
         """
         Reads the posting list for a given term from the index.
@@ -73,7 +87,7 @@ class CosineSim:
         l2 = math.sqrt(l2_sum)
         return l2
 
-    def get_top_N_docs_by_cosine_similarity(self, query, N=100):
+    def get_top_N_docs_by_cosine_similarity(self, query, N, page_rank_on_title_index_dict, DL_title):
         """
           Calculates the cosine similarity between the query and documents in the index.
 
@@ -88,32 +102,43 @@ class CosineSim:
           """
         global w_pls_dict
         self.get_posting_gen(query)
+
         normQuery = self.l2_norm(query)
         simDict = defaultdict(float)
         counter = Counter(query)
+
         words = tuple(w_pls_dict.keys())
         pls = tuple(w_pls_dict.values())
+
         for token in np.unique(query):
             if token in self.index.df.keys():
                 list_of_doc = pls[words.index(token)]
-
                 for doc_id, freq in list_of_doc:
-                    denominator = normQuery * self.doc_norm[doc_id]
-                    numerator = counter[token] * freq
-                    simDict[doc_id] = simDict.get(doc_id, 0) + numerator / denominator
+                    if doc_id in page_rank_on_title_index_dict.keys():
+                        denominator = normQuery * self.doc_norm[doc_id]
+                        numerator = counter[token] * freq
+                        simDict[doc_id] = simDict.get(doc_id, 0) + numerator / denominator
 
+        for doc_id in simDict.keys():
+            simDict[doc_id] = simDict[doc_id] / DL_title.get(doc_id, 1)
+        # normalized_simDict = self.normalize_cosine_similarity(simDict)
         '''
         Generate list of tuples containing the document ID and its corresponding rounded similarity score.
               The list is sorted in descending order of similarity scores
         '''
-        '''
-        Generate list of tuples containing the document ID and its corresponding rounded similarity score.
-              The list is sorted in descending order of similarity scores
-        '''
 
-        ls_res = sorted([(doc_id, round(score, 5)) for doc_id, score in simDict.items()], key=lambda x: x[1],
-                        reverse=True)[:N]
+        # ls_res = sorted([(doc_id, round(score, 5)) for doc_id, score in normalized_simDict.items()], key=lambda x: x[1],
+        # reverse=True)[:N]
+        # Convert to NumPy array for vectorized operations
+        doc_ids = np.array(list(simDict.keys()))
+        scores = np.array(list(simDict.values()))
 
-        sorted_dict = {doc_id: score for doc_id, score in ls_res}
-        return (ls_res, sorted_dict)
+        # Normalize scores
+        scores /= np.linalg.norm(scores)
+
+        # Sort and return top N documents
+        top_N_indices = np.argsort(scores)[::-1][:N]
+        top_N_docs = [(doc_ids[i], scores[i]) for i in top_N_indices]
+
+        return top_N_docs
 

@@ -37,6 +37,11 @@ class MyFlaskApp(Flask):
                 with blob.open('rb') as openfile:
                     self.DL_body = pickle.load(openfile)
 
+            elif blob.name == "title_dictionary_length.pkl":
+                with blob.open('rb') as openfile:
+                    self.DL_title = pickle.load(openfile)
+                    print("loaded DL title")
+
             elif blob.name == "doc_l2_norm.pkl":
                 with blob.open('rb') as openfile:
                     self.doc_norm = pickle.load(openfile)
@@ -100,6 +105,7 @@ def search():
     Convert the text to lowercase, remove stopwords, and apply stemming.
     '''
     query_stemmed = list(set(app.tokenizer.tokenize(query, True)))
+    print(query_stemmed)
     query_not_stemmed=list(set(app.tokenizer.tokenize(query, False)))
 
     '''
@@ -108,20 +114,25 @@ def search():
     '''
 
     #TODO IR without stemming is much faster with 5-8 seconds difference
-    ttime=time()
-    body_res_ls, body_res_dict = app.cosine_body.get_top_N_docs_by_cosine_similarity(query_not_stemmed, N=150)
-    print(time()-ttime)
-    title_res = app.page_rank_sim.get_top_N_docs_by_title_and_page_rank(query_stemmed, N=150, cosine_sim_on_body_index_dict=body_res_dict)
-    ttime=time()
-    merged_res_dict = merged_results_and_sort(body_res_ls, title_res, cosine_sim_body_weight, title_page_rank_weight)
-    print(time()-ttime)
+    s1_ttime=time()
+    title_res_ls, title_res_dict = app.page_rank_sim.get_top_N_docs_by_title_and_page_rank(query_stemmed, app.DL_title, N=80)
+    e1_ttime = time()
+    print(e1_ttime - s1_ttime)
+
+    s2_ttime = time()
+    body_res = app.cosine_stem_body.get_top_N_docs_by_cosine_similarity(query_stemmed, N=80, page_rank_on_title_index_dict = title_res_dict, DL_title = app.DL_title)
+    e2_ttime = time()
+    print(e2_ttime - s2_ttime)
+
+    merged_res_dict = merged_results_and_sort(body_res, title_res_ls, cosine_sim_body_weight, title_page_rank_weight)
 
     # Extract each document title by its 'doc_id' value
     N = 30
-    ttime=time()
 
+    s3_ttime = time()
     res = [(int(doc_id), app.title_dic.get(doc_id, "not found")) for doc_id, score in merged_res_dict][:N]
-    print(time()-ttime)
+    e3_ttime = time()
+    print(e3_ttime - s3_ttime)
 
     # END SOLUTION
     return jsonify(res)
@@ -132,16 +143,15 @@ def merged_results_and_sort(body_list, title_list, body_weight, title_weight) ->
     title_dict_sorted_by_id = sorted(title_list, key=lambda x: x[0], reverse=True)
     result_dict = {}
 
-    for (doc_id_body, score_body) in body_dict_sorted_by_id:
-
-        if doc_id_body in [doc_id for doc_id, _ in title_dict_sorted_by_id]:
-            score_title = next(score for doc_id, score in title_dict_sorted_by_id if doc_id == doc_id_body)
+    for (doc_id_title, score_title) in title_dict_sorted_by_id:
+        if doc_id_title in [doc_id for doc_id, _ in body_dict_sorted_by_id]:
+            score_body = next(score for doc_id, score in body_dict_sorted_by_id if doc_id == doc_id_title)
             merged_score = (score_body * body_weight) + (score_title * title_weight)
         else:
-            merged_score = score_body
+            merged_score = score_title
 
         # Add merged score to result dictionary
-        result_dict[doc_id_body] = merged_score
+        result_dict[doc_id_title] = merged_score
 
     return sorted([(doc_id, score) for doc_id, score in result_dict.items()], key=lambda x: x[1], reverse=True)
 
