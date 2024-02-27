@@ -6,7 +6,7 @@ from collections import defaultdict
 
 class CosineSim:
 
-    def __init__(self, index, DL, index_type, doc_norm):
+    def __init__(self, index, DL, index_type, doc_norm=None):
         self.index = index
         self.DL = DL
         self.doc_norm = doc_norm

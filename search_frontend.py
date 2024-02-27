@@ -16,7 +16,6 @@ class MyFlaskApp(Flask):
 
         self.my_bucket = client.bucket(bucket_name=BUCKET_NAME)
         self.tokenizer = Tokenizer()
-        self.page_rank = {}
 
         for blob in client.list_blobs(BUCKET_NAME):
             if blob.name == "body_stem_index.pkl":
@@ -30,6 +29,10 @@ class MyFlaskApp(Flask):
             elif blob.name == "body_dictionary_length.pkl":
                 with blob.open('rb') as openfile:
                     self.DL_body = pickle.load(openfile)
+
+            elif blob.name == "title_dictionary_length.pkl":
+                with blob.open('rb') as openfile:
+                    self.DL_title = pickle.load(openfile)
 
             elif blob.name == "doc_l2_norm.pkl":
                 with blob.open('rb') as openfile:
