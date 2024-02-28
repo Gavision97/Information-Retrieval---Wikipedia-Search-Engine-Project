@@ -7,7 +7,6 @@ from pyngrok import ngrok,conf
 import search_frontend as se
 from google.cloud.client import service_account
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "irprojectilayvictor-e5016b01bf5b.json"
-tokenizer=Tokenizer()
 query_stemmed = list(set(tokenizer.tokenize("Who is considered the \"Father of the United States\"?", True)))
 ngrok.set_auth_token("2cm7N9F92W8iDy4CD5r3EQgRi0B_2nNi4EgiEVF73siGHaaYt")
 public_url = ngrok.connect(5000).public_url
