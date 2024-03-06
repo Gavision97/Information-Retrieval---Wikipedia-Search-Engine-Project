@@ -3,7 +3,7 @@ Imports:
 """
 import pickle
 from typing import List, Tuple, Any
-from BM25 import BM25, merge_results_
+
 from Tokenizer import Tokenizer
 from CosineSim import CosineSim
 from PageRankSim import PageRankSim
@@ -19,21 +19,28 @@ class MyFlaskApp(Flask):
         self.my_bucket = client.bucket(bucket_name=BUCKET_NAME)
         self.tokenizer = Tokenizer()
         for blob in client.list_blobs(BUCKET_NAME):
-            if blob.name == "body_index_final.pkl":
+            if blob.name == "body_index.pkl":
+                with blob.open('rb') as openfile:
+                    self.body_index=pickle.load(openfile)
+            if blob.name == "title_index.pkl":
+                with blob.open('rb') as openfile:
+                    self.title_index=pickle.load(openfile)
+            if blob.name == "body_stem_index.pkl":
                 with blob.open('rb') as openfile:
                     self.body_stem_index = pickle.load(openfile)
 
-            elif blob.name == "title_index_final.pkl":
+            elif blob.name == "title_stem_index.pkl":
                 with blob.open('rb') as openfile:
                     self.title_stem_index = pickle.load(openfile)
 
-            elif blob.name == "body_dl_.pkl":
+            elif blob.name == "body_dictionary_length.pkl":
                 with blob.open('rb') as openfile:
                     self.DL_body = pickle.load(openfile)
 
-            elif blob.name == "title_dl_.pkl":
+            elif blob.name == "title_dictionary_length.pkl":
                 with blob.open('rb') as openfile:
                     self.DL_title = pickle.load(openfile)
+                    print("loaded DL title")
 
             elif blob.name == "doc_l2_norm.pkl":
                 with blob.open('rb') as openfile:
@@ -46,21 +53,18 @@ class MyFlaskApp(Flask):
             elif blob.name == "pageRank.pkl":
                 with blob.open('rb') as openfile:
                     self.page_rank = pickle.load(openfile)
-
+        self.cosine_body=CosineSim(self.body_index,
+                                          self.DL_body,
+                                          "body_index_directory",
+                                          self.doc_norm)
         self.cosine_stem_body = CosineSim(self.body_stem_index,
                                           self.DL_body,
                                           "body_stem_index_directory",
                                           self.doc_norm)
+
         self.page_rank_sim = PageRankSim(self.title_stem_index,
-                                         "title_index_dictionary_final",
+                                         "title_stem_index_dictionary",
                                          self.page_rank)
-
-
-        self.BM25_body = BM25(self.body_stem_index, self.DL_body, "body_index_directory_final", "body", self.page_rank, k1=1.5, b=0.65)
-        self.BM25_title = BM25(self.title_stem_index, self.DL_title,  "title_index_directory_final", "title", self.page_rank, k1=2.2, b=0.85)
-
-        self.cosine_stem_body = CosineSim(self.body_stem_index, self.DL_body, "body_index_directory_final", self.doc_norm)
-        self.page_rank_sim = PageRankSim(self.title_stem_index, "title_index_dictionary_final", self.page_rank)
 
         super(MyFlaskApp, self).run(host=host, port=port, debug=debug, **options)
 
@@ -92,55 +96,48 @@ def search():
     if len(query) == 0:
         return jsonify(res)
     # BEGIN SOLUTION
-    question = ["where", "how", "what", "why"]
-    query_stemmed = list(set(app.tokenizer.tokenize(query)))
-    query = query.lower()
 
-    if any(substring in query for substring in question) or query.endswith("?"):
-        print(f'IN Question phase , curr query -> {query_stemmed}, ends with {query.endswith("?")}')
-        title_res = app.BM25_title.search_(query_stemmed, 50)
-        body_res = app.BM25_body.search_(query_stemmed, 50)
+    cosine_sim_body_weight = 0.8
+    title_page_rank_weight = 0.2
 
-        print(f'BODY RES -> {body_res}, {len(body_res)}')
-        print(f'TITLE RES -> {title_res}, {len(body_res)}')
-        title_weight = 0.3
-        body_weight = 0.7
+    '''
+    First, tokenize the query.
+    Convert the text to lowercase, remove stopwords, and apply stemming.
+    '''
+    query_stemmed = list(set(app.tokenizer.tokenize(query, True)))
+    print(query_stemmed)
+    query_not_stemmed=list(set(app.tokenizer.tokenize(query, False)))
 
-    else:
-        title_res = app.BM25_title.search_(query_stemmed, 50)
-        body_res = app.BM25_body.search_(query_stemmed, 50)
-        print(f'title -> {title_res}')
-        print(f'body -> {body_res}')
-        #print(f'Title BM25 --->> {title_res}\nBody BM25 ----->>> {body_res}')
-        title_weight = 0.7
-        body_weight = 0.3
+    '''
+    The next step is to return N number of documents along with their cosine similarity with the query. 
+    For more documentation, refer to 'CosineSimOriginal.py'.
+    '''
 
-    merged_res = merge_results_(title_res, body_res, title_weight=title_weight, text_weight=body_weight,page_rank=app.page_rank , N=30)
-    print(f'MERGED -> {merged_res}')
-    res = [(str(doc_id), app.title_dic.get(doc_id, "not found")) for doc_id, score in merged_res][:30]
+    #TODO IR without stemming is much faster with 5-8 seconds difference
+    s1_ttime=time()
+    title_res_ls, title_res_dict = app.page_rank_sim.get_top_N_docs_by_title_and_page_rank(query_stemmed, app.DL_title, N=80)
+    e1_ttime = time()
+    print(e1_ttime - s1_ttime)
+
+    s2_ttime = time()
+    body_res = app.cosine_stem_body.get_top_N_docs_by_cosine_similarity(query_stemmed, N=80, page_rank_on_title_index_dict = title_res_dict, DL_title = app.DL_title)
+    e2_ttime = time()
+    print(e2_ttime - s2_ttime)
+
+    merged_res_dict = merged_results_and_sort(body_res, title_res_ls, cosine_sim_body_weight, title_page_rank_weight)
+
+    # Extract each document title by its 'doc_id' value
+    N = 30
+
+    s3_ttime = time()
+    res = [(int(doc_id), app.title_dic.get(doc_id, "not found")) for doc_id, score in merged_res_dict][:N]
+    e3_ttime = time()
+    print(e3_ttime - s3_ttime)
+
+    # END SOLUTION
     return jsonify(res)
 
 
-################################################################################
-def merged_results_(body_list, title_list, body_weight, title_weight) -> list[tuple[any, any]]:
-    body_dict_sorted_by_id = sorted(body_list, key=lambda x: x[0], reverse=True)
-    title_dict_sorted_by_id = sorted(title_list, key=lambda x: x[0], reverse=True)
-    result_dict = {}
-
-    for (doc_id_body, score_body) in body_dict_sorted_by_id:
-        if doc_id_body in [doc_id for doc_id, _ in title_dict_sorted_by_id]:
-            score_title = next(score for doc_id, score in title_dict_sorted_by_id if doc_id == doc_id_body)
-            merged_score = (score_body * body_weight) + (score_title * title_weight)
-        else:
-            merged_score = score_body
-
-        # Add merged score to result dictionary
-        result_dict[doc_id_body] = merged_score
-
-    return sorted([(doc_id, score) for doc_id, score in result_dict.items()], key=lambda x: x[1], reverse=True)
-
-
-################################################################################
 def merged_results_and_sort(body_list, title_list, body_weight, title_weight) -> list[tuple[any, any]]:
     body_dict_sorted_by_id = sorted(body_list, key=lambda x: x[0], reverse=True)
     title_dict_sorted_by_id = sorted(title_list, key=lambda x: x[0], reverse=True)
@@ -158,7 +155,6 @@ def merged_results_and_sort(body_list, title_list, body_weight, title_weight) ->
 
     return sorted([(doc_id, score) for doc_id, score in result_dict.items()], key=lambda x: x[1], reverse=True)
 
-
 if __name__ == '__main__':
     # run the Flask RESTful API, make the server publicly available (host='0.0.0.0') on port 8080
-    app.run(host='0.0.0.0', port=8080, debug=True, use_reloader=False)
+    app.run(host='0.0.0.0', port=8080, debug=True)
