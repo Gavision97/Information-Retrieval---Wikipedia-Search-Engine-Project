@@ -4,9 +4,6 @@ from contextlib import closing
 from inverted_index_gcp import MultiFileReader
 from collections import Counter
 from collections import defaultdict
-from time import time
-import threading
-
 
 class CosineSim:
 
@@ -47,7 +44,6 @@ class CosineSim:
         Raises:
             KeyError: If the term `w` is not found in the posting lists.
         """
-        global w_pls_dict
         TUPLE_SIZE = 6
         with closing(MultiFileReader(self.index_type, self.bucket_name)) as reader:
             try:
@@ -60,7 +56,8 @@ class CosineSim:
                     posting_list.append((doc_id, tf))
             except KeyError:
                 posting_list = []  # Returning an empty list as default
-        w_pls_dict[w] = posting_list
+
+        return posting_list
 
     def get_posting_gen(self, query):
         """
@@ -69,15 +66,11 @@ class CosineSim:
         ----------
         index: inverted index
         """
-        global w_pls_dict
         w_pls_dict = {}
-        threads = []
         for term in query:
-            thread = threading.Thread(target=self.read_posting_list, args=(self.index, term,))
-            threads.append(thread)
-            thread.start()
-        for thread in threads:
-            thread.join()
+            temp_pls = self.read_posting_list(self.index, term)
+            w_pls_dict[term] = temp_pls
+        return w_pls_dict
 
     def l2_norm(self, query):
         word_counts = Counter(query)
@@ -87,7 +80,7 @@ class CosineSim:
         l2 = math.sqrt(l2_sum)
         return l2
 
-    def get_top_N_docs_by_cosine_similarity(self, query, N, page_rank_on_title_index_dict, DL_title):
+    def score(self, query, N, page_rank_on_title_index_dict):
         """
           Calculates the cosine similarity between the query and documents in the index.
 
@@ -100,8 +93,7 @@ class CosineSim:
                   - A list of tuples containing document IDs and their corresponding cosine similarity scores.
                   - A dictionary containing document IDs as keys and their corresponding cosine similarity scores as values.
           """
-        global w_pls_dict
-        self.get_posting_gen(query)
+        w_pls_dict = self.get_posting_gen(query)
 
         normQuery = self.l2_norm(query)
         simDict = defaultdict(float)
@@ -118,27 +110,19 @@ class CosineSim:
                         denominator = normQuery * self.doc_norm[doc_id]
                         numerator = counter[token] * freq
                         simDict[doc_id] = simDict.get(doc_id, 0) + numerator / denominator
+        
+        print(f'MAX SIM VALUES -> {max(simDict.values())}')
+        print(f'COSINE SIM DICS -> {simDict.items()}')
 
-        for doc_id in simDict.keys():
-            simDict[doc_id] = simDict[doc_id] / DL_title.get(doc_id, 1)
-        # normalized_simDict = self.normalize_cosine_similarity(simDict)
+        normalized_simDict = self.normalize_cosine_similarity(simDict)
         '''
         Generate list of tuples containing the document ID and its corresponding rounded similarity score.
               The list is sorted in descending order of similarity scores
         '''
 
-        # ls_res = sorted([(doc_id, round(score, 5)) for doc_id, score in normalized_simDict.items()], key=lambda x: x[1],
-        # reverse=True)[:N]
-        # Convert to NumPy array for vectorized operations
-        doc_ids = np.array(list(simDict.keys()))
-        scores = np.array(list(simDict.values()))
+        ls_res = sorted([(doc_id, round(score, 5)) for doc_id, score in normalized_simDict.items()], key=lambda x: x[1],
+        reverse=True)[:N]
 
-        # Normalize scores
-        scores /= np.linalg.norm(scores)
+        print(f'Best values N by COSINE SIM -->> {ls_res}')
 
-        # Sort and return top N documents
-        top_N_indices = np.argsort(scores)[::-1][:N]
-        top_N_docs = [(doc_ids[i], scores[i]) for i in top_N_indices]
-
-        return top_N_docs
-
+        return ls_res

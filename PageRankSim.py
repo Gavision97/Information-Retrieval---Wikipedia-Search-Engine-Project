@@ -89,7 +89,31 @@ class PageRankSim:
 
         return w_pls_dict
 
-    def get_top_N_docs_by_title_and_page_rank(self, query, DL_title, N):
+    def getDocListResultWithPageRank(self, query, N):
+        newDict = {}
+        pageRankDict = {}
+        w_pls_dict = self.get_posting_gen(query)
+        for term in query:
+            if term in w_pls_dict.keys():
+                for doc_id, tf in w_pls_dict[term]:
+                    newDict[doc_id] = newDict.get(doc_id, 0) + 1
+                    pageRankDict[doc_id] = self.page_rank.get(doc_id, 0) if doc_id not in pageRankDict else \
+                    pageRankDict[doc_id]
+
+        maxPage = max(pageRankDict.values())
+        for doc_id, value in newDict.items():
+            newDict[doc_id] = (value / len(query)) + (pageRankDict[doc_id] / maxPage)
+
+            # Normalize the values to be in the range of 0-1 by max score:
+        max_ = max(newDict.values())
+        for doc_id, score in newDict.items():
+            newDict[doc_id] = score / max_
+
+        sorted_docs = sorted(newDict.items(), key=lambda x: x[1], reverse=True)[:N]
+        return sorted_docs
+
+    ##############################################################################################################3
+    def score(self, query, DL_title, N):
         """
         Retrieves the top N documents based on their title page rank and relevance to the query.
 
@@ -102,34 +126,33 @@ class PageRankSim:
             list: A list of tuples containing the top N document IDs and their corresponding normalized page rank values.
         """
         alpha = 0.00001
-        page_rank_tf_dict = {}
-        temp_page_rank_dict = {}
+        title_tf_dict = {}
+        page_rank_dict = {}
         visited_docs = set()  # Set to keep track of visited dic_ids, in order to add page rank once
         w_pls_dict = self.get_posting_gen(query)
 
         for term in query:
             if term in w_pls_dict.keys():
                 for doc_id, tf in w_pls_dict[term]:
-                    page_rank_tf_dict[doc_id] = page_rank_tf_dict.get(doc_id, 0) + 1
+                    title_tf_dict[doc_id] = title_tf_dict.get(doc_id, 0) + 1
 
-        for doc_id_ in page_rank_tf_dict.keys():
-            temp_page_rank_dict[doc_id_] = self.page_rank.get(doc_id_, 0) + alpha
+        # Normalize the values by each document title length
+        for doc_id in title_tf_dict.keys():
+            page_rank_dict[doc_id] = self.page_rank.get(doc_id, 0) + alpha
+            title_tf_dict[doc_id] = title_tf_dict[doc_id] / DL_title.get(doc_id, 1)
 
-        normalized_temp_page_rank_dict = self.normalize_page_rank_dict(temp_page_rank_dict)
+        maxp = max(page_rank_dict.values())
+        for doc_id in title_tf_dict.keys():
+            title_tf_dict[doc_id] = title_tf_dict[doc_id] + (page_rank_dict.get(doc_id, 0) / maxp)
 
-        for doc_id__ in page_rank_tf_dict.keys():
-            page_rank_tf_dict[doc_id__] = (page_rank_tf_dict[doc_id__] + normalized_temp_page_rank_dict[
-                doc_id__]) / DL_title.get(doc_id, 1)
-
-        normalized_page_rank_dict = self.normalize_page_rank_dict(page_rank_tf_dict)
-
-        # Normalize the values to be in the range of 0-1
-        norm_page_rank_title_dic = self.normalize_page_rank_dict(page_rank_tf_dict)
+        # TODO REMOVE MARKDOWNS
+        # max_pagerank_keys = [key for key, value in page_rank_dict.items() if value == maxp]
+        # print("Keys with Maximum Page Rank Value:", max_pagerank_keys)
+        # print(f'MAX NEW ----->> {max(title_tf_dict.values())}')
 
         # Return top N doc_id with their corresponding page rank value in (doc_in, page_rank) in sorted list
-        ls_res = sorted(normalized_page_rank_dict.items(), key=lambda x: x[1], reverse=True)[:N]
-
+        ls_res = sorted(title_tf_dict.items(), key=lambda x: x[1], reverse=True)[:N]
+        # print(ls_res)
         sorted_dict = {doc_id: score for doc_id, score in ls_res}
 
         return (ls_res, sorted_dict)
-
