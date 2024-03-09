@@ -1,9 +1,10 @@
 import math
+from time import time
 
 import numpy as np
 from contextlib import closing
 from inverted_index_gcp import MultiFileReader
-
+import multiprocessing
 
 class BM25:
     """
@@ -27,6 +28,7 @@ class BM25:
         self.bucket_name = "inverted_indexes_bucket"
 
     def read_posting_list(self, index, w):
+        global w_pls_dict
         """
         Reads the posting list for a given term from the index.
 
@@ -61,9 +63,11 @@ class BM25:
                         posting_list.append((doc_id, tf))
             except KeyError:
                 posting_list = []  # Returning an empty list as default
-        return posting_list
+        #return posting_list
+        w_pls_dict[w]=posting_list
 
     def get_posting_gen(self, query):
+        global w_pls_dict
         """
         Retrieve posting lists for a given query.
 
@@ -74,10 +78,20 @@ class BM25:
             dict: A dictionary containing posting lists for each term in the query.
         """
         w_pls_dict = {}
+        tttime=time()
+
         for term in query:
+            #process = multiprocessing.Process(target=self.read_posting_list,args=(self.index, term,))
+            #jobs.append(process)
             temp_pls = self.read_posting_list(self.index, term)
             w_pls_dict[term] = temp_pls
+        # for j in jobs:
+        #     j.start()
+        # for j in jobs:
+        #     j.join()
+        print(f'BM25 Adding to dic after all processed time -> {(time() - tttime)}')
         return w_pls_dict
+
 
     def calc_idf(self, list_of_tokens):
         """
@@ -168,11 +182,12 @@ class BM25:
         return score
 
 
-def merge_results_(title_scores, body_scores, title_weight=0.5, text_weight=0.5, page_rank=None, N=3):
+def merge_results_(title_scores, body_scores, title_weight=0.5, text_weight=0.5, page_rank=None,page_views=None, N=3):
     """
     Merge search results from title and body scores, applying weights and considering PageRank.
 
     Args:
+        page_views: (dict): of pages id and num of views
         title_scores (list): A list of tuples containing document IDs and scores from the title search.
         body_scores (list): A list of tuples containing document IDs and scores from the body search.
         title_weight (float): The weight to be applied to title scores (default is 0.5).

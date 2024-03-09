@@ -3,11 +3,11 @@ REGION=us-central1
 ZONE=us-central1-c
 PROJECT_NAME="irprojectilayvictor"
 IP_NAME="$PROJECT_NAME-ip"
-GOOGLE_ACCOUNT_NAME="vicgav97" # without the @post.bgu.ac.il or @gmail.com part
+GOOGLE_ACCOUNT_NAME="ilayc11" # without the @post.bgu.ac.il or @gmail.com part
 
 # 0. Install Cloud SDK on your local machine or using Could Shell
 # check that you have a proper active account listed
-gcloud auth list 
+gcloud auth list
 # check that the right project and zone are active
 gcloud config list
 # if not set them
@@ -19,7 +19,7 @@ gcloud compute addresses create $IP_NAME --project=$PROJECT_NAME --region=$REGIO
 gcloud compute addresses list
 # note the IP address printed above, that's your extrenal IP address.
 # Enter it here: 
-INSTANCE_IP="35.226.197.250"
+INSTANCE_IP="34.170.105.204"
 
 # 2. Create Firewall rule to allow traffic to port 8080 on the instance
 gcloud compute firewall-rules create default-allow-http-8080 \
@@ -30,7 +30,7 @@ gcloud compute firewall-rules create default-allow-http-8080 \
 # 3. Create the instance. Change to a larger instance (larger than e2-micro) as needed.
 gcloud compute instances create $INSTANCE_NAME \
   --zone=$ZONE \
-  --machine-type=e2-micro \
+  --machine-type=n2d-standard-8 \
   --network-interface=address=$INSTANCE_IP,network-tier=PREMIUM,subnet=default \
   --metadata-from-file startup-script=startup_script_gcp.sh \
   --scopes=https://www.googleapis.com/auth/cloud-platform \
@@ -47,7 +47,7 @@ python3 search_frontend.py
 
 ################################################################################
 # Clean up commands to undo the above set up and avoid unnecessary charges
-gcloud compute instances delete -q $INSTANCE_NAME
+gcloud compute instances delete -q $INSTANCE_NAME --zone $ZONE
 # make sure there are no lingering instances
 gcloud compute instances list
 # delete firewall rule
