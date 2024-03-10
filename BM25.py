@@ -1,4 +1,5 @@
 import math
+import threading
 from time import time
 
 import numpy as np
@@ -79,16 +80,15 @@ class BM25:
         """
         w_pls_dict = {}
         tttime=time()
-
+        jobs=[]
         for term in query:
-            #process = multiprocessing.Process(target=self.read_posting_list,args=(self.index, term,))
-            #jobs.append(process)
-            temp_pls = self.read_posting_list(self.index, term)
-            w_pls_dict[term] = temp_pls
-        # for j in jobs:
-        #     j.start()
-        # for j in jobs:
-        #     j.join()
+            thread=threading.Thread(target=self.read_posting_list,args=(self.index, term,))
+            jobs.append(thread)
+            #temp_pls = self.read_posting_list(self.index, term)
+            #w_pls_dict[term] = temp_pls
+            thread.start()
+        for j in jobs:
+            j.join()
         print(f'BM25 Adding to dic after all processed time -> {(time() - tttime)}')
         return w_pls_dict
 
