@@ -91,7 +91,6 @@ async def body_search(query_stemmed, N):
 
 @app.route("/search")
 async def search():
-    #global title_res,body_res
     ''' Returns up to a 100 of your best search results for the query. This is
         the place to put forward your best search engine, and you are free to
         implement the retrieval whoever you'd like within the bound of the
@@ -128,8 +127,6 @@ async def search():
         body_weight = 0.3
 
     ttttime = time()
-    #title_res = app.BM25_title.search_(query_stemmed, 50)
-    #body_res = app.BM25_body.search_(query_stemmed, 50)
     title_task = asyncio.create_task(title_search(query_stemmed, 50))
     body_task = asyncio.create_task(body_search(query_stemmed, 50))
 

@@ -84,8 +84,7 @@ class BM25:
         for term in query:
             thread=threading.Thread(target=self.read_posting_list,args=(self.index, term,))
             jobs.append(thread)
-            #temp_pls = self.read_posting_list(self.index, term)
-            #w_pls_dict[term] = temp_pls
+            #w_pls_dict[term] = self.read_posting_list(self.index, term)
             thread.start()
         for j in jobs:
             j.join()
