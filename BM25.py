@@ -1,26 +1,17 @@
 import math
 import threading
-from time import time
-
 import numpy as np
 from contextlib import closing
 from inverted_index_gcp import MultiFileReader
-import multiprocessing
+
 
 class BM25:
-    """
-    Best Match 25.
-    ----------
-    k1 : float, default 1.5
-    b : float, default 0.75
-    index: inverted index
-    """
-
-    def __init__(self, index, DL, index_type, name, page_rank, k1=1.5, b=0.75):
+    def __init__(self, index, DL, index_type, name, page_rank, page_views, k1=1.5, b=0.75):
         self.b = b
         self.k1 = k1
         self.index = index
         self.DL = DL
+        self.page_views = page_views
         self.name = name
         self.page_rank = page_rank
         self.N = len(DL)
@@ -29,7 +20,6 @@ class BM25:
         self.bucket_name = "inverted_indexes_bucket"
 
     def read_posting_list(self, index, w):
-        global w_pls_dict
         """
         Reads the posting list for a given term from the index.
 
@@ -64,11 +54,10 @@ class BM25:
                         posting_list.append((doc_id, tf))
             except KeyError:
                 posting_list = []  # Returning an empty list as default
-        #return posting_list
+
         w_pls_dict[w]=posting_list
 
     def get_posting_gen(self, query):
-        global w_pls_dict
         """
         Retrieve posting lists for a given query.
 
@@ -78,17 +67,17 @@ class BM25:
         Returns:
             dict: A dictionary containing posting lists for each term in the query.
         """
+        global w_pls_dict
         w_pls_dict = {}
-        tttime=time()
         jobs=[]
+
         for term in query:
             thread=threading.Thread(target=self.read_posting_list,args=(self.index, term,))
             jobs.append(thread)
-            #w_pls_dict[term] = self.read_posting_list(self.index, term)
             thread.start()
         for j in jobs:
             j.join()
-        print(f'BM25 Adding to dic after all processed time -> {(time() - tttime)}')
+
         return w_pls_dict
 
 
@@ -111,7 +100,7 @@ class BM25:
                 pass
         return idf
 
-    def search_(self, query, N=3):
+    def search_(self, query, N=20):
         """
         Search for documents based on the given query.
 
@@ -137,7 +126,6 @@ class BM25:
                 current_list = (pls[words.index(term)])
                 candidates += current_list
         candidates = np.unique([c[0] for c in candidates])
-
 
         if self.name == 'title':
             return sorted([(doc_id,
@@ -181,12 +169,11 @@ class BM25:
         return score
 
 
-def merge_results_(title_scores, body_scores, title_weight=0.5, text_weight=0.5, page_rank=None,page_views=None, N=3):
+def merge_results_(title_scores, body_scores, page_views, title_weight=0.5, text_weight=0.5, page_rank=None, N=20):
     """
     Merge search results from title and body scores, applying weights and considering PageRank.
 
     Args:
-        page_views: (dict): of pages id and num of views
         title_scores (list): A list of tuples containing document IDs and scores from the title search.
         body_scores (list): A list of tuples containing document IDs and scores from the body search.
         title_weight (float): The weight to be applied to title scores (default is 0.5).
@@ -219,12 +206,11 @@ def merge_results_(title_scores, body_scores, title_weight=0.5, text_weight=0.5,
         res_list = []
         for key in list(diff):
             if key in title_dict.keys():
-                res_list.append((key, title_dict[key][0] + math.sqrt(page_rank.get(key, 0))))
+                res_list.append((key, title_dict[key][0] + math.log(page_rank.get(key, 1)) + math.log(page_views.get(key, 1), 6)))
             else:
-                res_list.append((key, body_dict[key][0]))
+                res_list.append((key, body_dict[key][0] + math.log(page_rank.get(key, 1)) + math.log(page_views.get(key, 1), 6)))
         merged_lst.extend(sorted(res_list, key=lambda x: x[1], reverse=True))
 
     for doc_id in inter:
-        merged_lst.append(
-            (doc_id, title_dict[doc_id][0] + body_dict[doc_id][0] + (math.sqrt(page_rank.get(doc_id, 0)))))
+        merged_lst.append((doc_id, title_dict[doc_id][0] + body_dict[doc_id][0] + math.log(page_rank.get(doc_id, 1)) + math.log(page_views.get(doc_id, 1), 6)))
     return sorted(merged_lst, key=lambda x: x[1], reverse=True)[:N]
