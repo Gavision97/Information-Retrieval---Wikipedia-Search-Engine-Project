@@ -206,7 +206,6 @@ def merge_results_(title_scores, body_scores, title_weight=0.5, text_weight=0.5,
         for key in list(diff):
             if key in title_dict.keys():
                 res_list.append((key, title_dict[key][0] + math.sqrt(page_rank.get(key, 0))))
-                res_list.append((key, title_dict[key][0]))
             else:
                 res_list.append((key, body_dict[key][0]))
         merged_lst.extend(sorted(res_list, key=lambda x: x[1], reverse=True))
